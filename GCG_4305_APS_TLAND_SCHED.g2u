@@ -1,0 +1,549 @@
+Program.Sub.ScreenSU.Start
+Gui.F_Maint..Create
+Gui.F_Maint..Caption("Maintenance")
+Gui.F_Maint..Size(2595,1920)
+Gui.F_Maint..MinX(0)
+Gui.F_Maint..MinY(0)
+Gui.F_Maint..Position(0,0)
+Gui.F_Maint..BackColor(-2147483633)
+Gui.F_Maint..MaxButton(False)
+Gui.F_Maint..MinButton(False)
+Gui.F_Maint..MousePointer(0)
+Gui.F_Maint..Sizeable(False)
+Gui.F_Maint..Event(UnLoad,Unload)
+Gui.F_Maint.ddlGroup.Create(DropDownList)
+Gui.F_Maint.ddlGroup.Size(1875,330)
+Gui.F_Maint.ddlGroup.Position(105,315)
+Gui.F_Maint.lbl1.Create(Label,"Email User Group",True,1590,255,0,105,105,True,0,"Arial",8,-2147483633,0)
+Gui.F_Maint.cmdRun.Create(Button)
+Gui.F_Maint.cmdRun.Size(855,375)
+Gui.F_Maint.cmdRun.Position(1275,945)
+Gui.F_Maint.cmdRun.Caption("Run")
+Gui.F_Maint.cmdRun.Event(Click,cmdRun_Click)
+Gui.F_Maint.cmdSave.Create(Button)
+Gui.F_Maint.cmdSave.Size(855,375)
+Gui.F_Maint.cmdSave.Position(105,945)
+Gui.F_Maint.cmdSave.Caption("Save")
+Gui.F_Maint.cmdSave.Event(Click,cmdSave_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.bExist.Declare(Boolean)
+
+f.ODBC.Connection!Con.OpenConnection(v.Ambient.PDSN,v.Ambient.PUser,v.Ambient.PPass)
+
+'Override for hook 38110 - call APS from Online Update. This project sorts the APSDL file which is used to sort the GUI dispatch list. However, if there is not an override on this hook 
+'then online update will replace APSDL with its own version each time online update is run and the APS hook is fired, causing the custom sorting to be overwritten.
+f.Intrinsic.Control.If(V.Caller.Hook,=,38110)
+	V.Passed.777777.Set(1)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.Else
+	'Switch for custom menu items - 3 exist. If no case is met then we were not called from a custom menu item and were launched from a scheduled task, so we just process it
+	'C - Show screen to allow update of email group and then run 83, 77, and sortlist functionalities
+	'S - Only run mode 77. No email sent, APSDL file is not updated nor sorted.
+	'A - Create a new APSDL file and then sort it.
+	F.Intrinsic.Control.SelectCase(V.Caller.Switches)
+		F.Intrinsic.Control.Case("C")
+			f.Intrinsic.Control.CallSub(showscreen)
+			
+		F.Intrinsic.Control.Case("S")
+			F.Intrinsic.Control.CallSub(RunAPSMode77)
+			
+		F.Intrinsic.Control.Case("A")
+			F.Intrinsic.Control.CallSub(GenerateAPSDL)
+			F.Intrinsic.Control.CallSub(SortList)
+			
+		F.Intrinsic.Control.CaseElse
+			F.Intrinsic.Control.CallSub(schedule)
+			
+	F.Intrinsic.Control.EndSelect
+F.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+'	f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.Unload.End
+
+Program.Sub.ShowScreen.Start
+F.Intrinsic.Control.SetErrorHandler("ShowScreen_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sGroup.Declare(string)
+v.Local.iCount.Declare(long)
+
+
+'We need to show the screen so they can pick the different group to email
+'We need to populate the drop down list
+f.Global.Security.GetAllUserGroups(v.Local.sGroup)
+f.Intrinsic.String.Split(v.Local.sGroup,"*!*",v.Local.sGroup)
+
+f.Intrinsic.Control.For(v.Local.iCount,v.Local.sGroup.LBound,v.Local.sGroup.UBound,1)
+	gui.F_Maint.ddlGroup.AddItem(v.Local.sGroup(v.Local.iCount).Trim)
+f.Intrinsic.Control.Next(v.Local.iCount)
+
+f.ODBC.Connection!Con.OpenLocalRecordsetRO("rstGrp","SELECT USR_GRP FROM GCG_4305_USR_GRP")
+F.Intrinsic.Control.If(V.ODBC.Con!rstGrp.EOF,=,FALSE)
+	Gui.F_Maint.ddlGroup.Text(v.ODBC.Con!rstGrp.FieldValTrim!USR_GRP)
+F.Intrinsic.Control.EndIf
+F.ODBC.Con!rstGrp.Close
+
+gui.F_Maint..Show
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("ShowScreen_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.ShowScreen.End
+
+Program.Sub.cmdRun_Click.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'Run the process
+Gui.F_Maint..Visible(False)
+f.Intrinsic.Control.CallSub(schedule)
+f.Intrinsic.Control.CallSub(unload)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.cmdRun_Click.End
+
+Program.Sub.cmdSave_Click.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'Saving user group
+f.ODBC.Connection!Con.OpenLocalRecordsetRW("rstSave","SELECT USR_GRP FROM GCG_4305_USR_GRP")
+F.Intrinsic.Control.If(V.ODBC.Con!rstSave.EOF,=,TRUE)
+	'No record so add one
+	f.ODBC.Con!rstSave.AddNew
+f.Intrinsic.Control.EndIf
+f.ODBC.Con!rstSave.Set!USR_GRP(v.Screen.F_Maint!ddlGroup.Text.Trim)
+f.ODBC.Con!rstSave.Update
+f.ODBC.Con!rstSave.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.cmdSave_Click.End
+
+Program.Sub.Schedule.Start
+F.Intrinsic.Control.SetErrorHandler("Schedule_Err")
+F.Intrinsic.Control.ClearErrors
+V.Local.sError.Declare(String)
+
+'APS 83 Schedule
+F.Intrinsic.Control.CallSub(RunAPSMode83)
+'Print the On-Time Projection report and email it
+f.Intrinsic.Control.CallSub(sendemail)
+'APS 77 Schedule
+F.Intrinsic.Control.CallSub(RunAPSMode77)
+'Load dispath list and sort it
+f.Intrinsic.UI.ChangeWaitStatus("Creating Dispatch Sort Order")
+F.Intrinsic.Control.CallSub(GenerateAPSDL)
+f.Intrinsic.Control.CallSub(sortlist)
+f.Intrinsic.UI.CloseWaitDialog
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Schedule_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.Schedule.End
+
+Program.Sub.SendEmail.Start
+F.Intrinsic.Control.SetErrorHandler("SendEmail_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sReport.Declare(string)
+v.Local.iRptID.Declare(long)
+v.Local.iRunID.Declare(long)
+v.Local.iLogID.Declare(long)
+v.Local.sFile.Declare(string)
+v.Local.sGroup.Declare(string)
+v.Local.sEmails.Declare(string)
+v.Local.sSender.Declare(string)
+v.Local.sTemplate.Declare(string)
+v.Local.bExist.Declare(Boolean)
+v.Local.sSendFile.Declare(string)
+v.Local.iUsrID.Declare(long)
+
+
+'We will print the report by name using the company code as the distinuisher
+f.Intrinsic.String.Build("APS On Time Projection {0}.rpt",v.Caller.CompanyCode,v.Local.sReport)
+f.Global.BI.GetIDFromName(v.Local.sReport,v.Local.iRptID)
+
+'We need to save the report
+f.Global.BI.GetRunID(v.Local.iRunID)
+f.Global.BI.StartLogging(v.Local.iRunID,v.Local.iRptID,-1,v.Local.sReport,v.Local.iLogID)
+f.Intrinsic.String.Build("{0}\APS On Time Projection {1}.PDF",v.Caller.GasDir,v.Caller.CompanyCode,v.Local.sFile)
+f.Global.BI.StopLogging(v.Local.iLogID)
+f.Global.BI.RunReportPreProcessor(v.Local.iRunID,v.Local.iLogID,"","",v.Local.iRptID,4,True,"",1,"",0,v.Local.sFile,"",v.Local.iLogID)
+
+f.Intrinsic.File.Exists(v.Local.sFile,v.Local.bExist)
+f.Intrinsic.Control.If(v.Local.bExist,=,True)
+	'We need to send emails to the group
+	f.ODBC.Connection!Con.ExecuteAndReturn("SELECT USR_GRP FROM GCG_4305_USR_GRP",V.Local.sGroup)
+	f.Intrinsic.String.Replace(v.Local.sGroup,"*!*","",v.Local.sGroup)
+	f.Intrinsic.String.Replace(v.Local.sGroup,"#$#","",v.Local.sGroup)
+	
+	'Get all emails from the group
+	f.Global.Security.GetGroupEmails(v.Local.sGroup,v.Local.sEmails)
+	f.Intrinsic.String.Split(v.Local.sEmails,"*!*",v.Local.sEmails)
+	f.Intrinsic.Control.If(v.Local.sEmails.UBound,>,0)
+		f.Intrinsic.String.Join(v.Local.sEmails,"@!@*!*",v.Local.sEmails)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("*!*{0}",v.Local.sEmails,v.Local.sEmails)
+	f.Intrinsic.Control.If(v.Local.sEmails,=,"*!*")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	'We need to get our Subject and Body from the Template
+	f.Intrinsic.String.Build("{0}\APSTemplate.txt",v.Caller.FilesDir,v.Local.sTemplate)
+	f.Intrinsic.File.Exists(v.Local.sTemplate,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist,=,True)
+		'Template exist so use it
+		f.Intrinsic.String.Split(v.Local.sTemplate,"*!*",v.Local.sTemplate)
+		v.Local.sTemplate.RedimPreserve(0,1)
+	f.Intrinsic.Control.Else
+		'Template doesn't exist so use default
+		v.Local.sTemplate.Redim(0,1)
+		f.Intrinsic.String.Build("APS On Time Projection {0}",v.Caller.CompanyCode,v.Local.sTemplate(0))
+		f.Intrinsic.String.Build("The attached file is APS On time Projection for {0}",v.Caller.CompanyCode,v.Local.sTemplate(1))
+	f.Intrinsic.Control.EndIf
+	
+	'Sender email and name
+	f.Global.Security.GetFullName(v.Caller.User,v.Local.sSender)
+	v.Local.sSender.RedimPreserve(0,1)
+	f.Global.Security.GetUserEmail(v.Caller.User,v.Local.sSender(1))
+	'Email*!*name
+	f.Intrinsic.String.Build("{0}*!*{1}",v.Local.sSender(1).Trim,v.Local.sSender(0),v.Local.sSender)
+	v.Local.sSender.RedimPreserve(0,0)
+	
+	'fix the file, name*!*path
+	v.Local.sSendFile.RedimPreserve(0,1)
+	f.Intrinsic.File.GetFileNameFromFQN(v.Local.sFile,v.Local.sSendFile(0))
+	f.Intrinsic.File.GetPathFromFQN(v.Local.sFile,v.Local.sSendFile(1))
+	f.Intrinsic.String.Join(v.Local.sSendFile,"*!*",v.Local.sSendFile)
+	
+	'Get USR ID
+	f.Global.Security.GetUserId(v.Caller.User,v.Caller.CompanyCode,v.Local.iUsrID)
+	
+	'Send email
+	f.Global.Messaging.QueueMessage(v.Caller.CompanyCode,V.Local.iUsrID,"GCG_4305",v.Local.sTemplate(0).Trim,v.Local.sSender,v.Local.sEmails,v.Local.sTemplate(1).Trim,-1,"",False,"","","","","","","",v.Local.sSendFile,False)
+f.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("SendEmail_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.SendEmail.End
+
+'Reads the APSDL file and sorts it using the customer's custom sort algorithm.
+Program.Sub.SortList.Start
+F.Intrinsic.Control.SetErrorHandler("SortList_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sInFile.Declare(String)
+V.Local.sJSS.Declare(String)
+V.Local.sBTM.Declare(String)
+V.Local.sETM.Declare(String)
+V.Local.sBTMTIME.Declare(String)
+V.Local.sETMTIME.Declare(String)
+V.Local.sSAR.Declare(String)
+V.Local.sRST.Declare(String)
+V.Local.sPSC.Declare(String)
+V.Local.dDateConversion.Declare(Date)
+V.Local.dTimeConversion.Declare(Date)
+V.Local.dSCHEDSTART.Declare(Date)
+V.Local.dSCHEDEND.Declare(Date)
+V.Local.sJS.Declare(String)
+V.Local.iPosArray.Declare(Long)
+V.Local.iLenArray.Declare(Long)
+v.Local.sWC.Declare(string)
+v.Local.iCount.Declare(long)
+v.Local.sFilter.Declare(string)
+v.Local.sSort.Declare(string)
+v.Local.sFileName.Declare(String)
+v.Local.sFile.Declare(String)
+v.Local.sRet.Declare(String)
+
+'File name to be read from then write to
+F.Intrinsic.String.Build("{0}\APSDL{1}",v.Caller.FilesDir,v.Caller.CompanyCode,v.Local.sFileName)
+
+'Create ATG datatable which will be used to hold the data that is read in from the existing APSDL file
+F.Data.DataTable.Create("ATG")
+F.Data.DataTable.AddColumn("ATG","JSS","String","               ")
+F.Data.DataTable.AddColumn("ATG","BTM","String","        ")
+F.Data.DataTable.AddColumn("ATG","ETM","String","        ")
+F.Data.DataTable.AddColumn("ATG","BTMTIME","String","    ")
+F.Data.DataTable.AddColumn("ATG","ETMTIME","String","    ")
+F.Data.DataTable.AddColumn("ATG","SAR","String","    ")
+F.Data.DataTable.AddColumn("ATG","RST","String","    ")
+F.Data.DataTable.AddColumn("ATG","PSC","String")
+F.Data.DataTable.AddColumn("ATG","Priority","Long")
+F.Data.DataTable.AddColumn("ATG","SCHEDSTART","Date")
+F.Data.DataTable.AddColumn("ATG","SCHEDEND","Date")
+F.Data.DataTable.AddColumn("ATG","JS","String")
+
+'Read file then split it on new line so that we can add each line to the datatable with appropriate data
+F.Intrinsic.File.File2String(V.Local.sFileName,V.Local.sInFile)
+F.Intrinsic.String.Split(V.Local.sInFile,V.Ambient.NewLine,V.Local.sInFile)
+
+'Setup position and length arrays for positional split
+F.Intrinsic.String.Split("1,16,24,32,36,40,44,48",",",V.Local.iPosArray)
+F.Intrinsic.String.Split("15,8,8,4,4,4,4,1",",",V.Local.iLenArray)
+
+'Now we loop through each line in the file, set up the necessary variables, then add the line to our datatable
+F.Intrinsic.Control.For(V.Local.iCount,V.Local.sInFile.LBound,V.Local.sInFile.UBound,1)
+	'Verify that the line is the correct length
+	F.Intrinsic.Control.If(V.Local.sInFile(V.Local.iCount).Length,=,48)
+		'Split the line into an array and assign varaibles to each portion of the array
+		F.Intrinsic.String.PositionalSplit(V.Local.sInFile(V.Local.iCount),V.Local.iPosArray,V.Local.iLenArray,V.Local.sRet)
+		V.Local.sJSS.Set(V.Local.sRet(0))
+		V.Local.sBTM.Set(V.Local.sRet(1))
+		V.Local.sETM.Set(V.Local.sRet(2))
+		V.Local.sBTMTIME.Set(V.Local.sRet(3))
+		V.Local.sETMTIME.Set(V.Local.sRet(4))
+		V.Local.sRST.Set(V.Local.sRet(5))
+		V.Local.sSAR.Set(V.Local.sRet(6))
+		V.Local.sPSC.Set(V.Local.sRet(7))
+		
+		'Set up SCHEDSTART and SCHEDEND as Dates to be stored in datatable
+		F.Intrinsic.Date.ConvertDString(v.Local.sBTM,"YYYYMMDD",V.Local.dDateConversion)
+		F.Intrinsic.Date.ConvertTString(V.Local.sBTMTIME,"HHNN",V.Local.dTimeConversion)
+		F.Intrinsic.Date.CombineDateTime(V.Local.dDateConversion,V.Local.dTimeConversion,V.Local.dSCHEDSTART)
+		
+		F.Intrinsic.Date.ConvertDString(v.Local.sETM,"YYYYMMDD",V.Local.dDateConversion)
+		F.Intrinsic.Date.ConvertTString(V.Local.sETMTIME,"HHNN",V.Local.dTimeConversion)
+		F.Intrinsic.Date.CombineDateTime(V.Local.dDateConversion,V.Local.dTimeConversion,V.Local.dSCHEDEND)
+	
+		'Set up JS from JSS
+		F.Intrinsic.String.Left(V.Local.sJSS,9,V.Local.sJS)
+		
+		'Add the line from the file into the DataTable
+		F.Data.DataTable.AddRow("ATG","JSS",V.Local.sJSS,"BTM",V.Local.sBTM,"ETM",V.Local.sETM,"BTMTIME",V.Local.sBTMTIME,"ETMTIME",V.Local.sETMTIME,"SAR",V.Local.sSAR,"RST",V.Local.sRST,"PSC",V.Local.sPSC,"SCHEDSTART",V.Local.dSCHEDSTART,"SCHEDEND",V.Local.dSCHEDEND,"JS",V.Local.sJS)
+	
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Next(V.Local.iCount)
+
+'Create a dictionary to fill the priority column of the datatable using data in APSV3_JBMASTER and set the default return to 50 as that is the default priority for work orders for Timberland
+F.Data.Dictionary.CreateFromSQL("PriorityDict","con","SELECT JS, PRIORITY FROM APSV3_JBMASTER")
+F.Data.Dictionary.SetDefaultReturn("PriorityDict",50)
+F.Data.DataTable.FillFromDictionary("ATG","PriorityDict","JS","Priority")
+F.Data.Dictionary.Close("PriorityDict")
+
+'We now have a datatable with the data needed for the GUI sort list. We need to create a DataView for each WC so we can sort them.
+'We obtain the list of WCs by getting a listing of pairs of WC:WC from the SeqRes Dictionary and splitting out to just a list of WCs.
+f.Data.Dictionary.CreateFromDataTable("SeqRes","ATG","SAR","SAR")
+f.Data.Dictionary.ReturnAllPairs("SeqRes",v.Local.sWC)
+f.Data.Dictionary.Close("SeqRes")
+
+f.Intrinsic.Control.If(v.Local.sWC,<>,"***NORETURN***")
+	'We need to split dictionary keys from values, redim to just have keys, then split list of keys into a list of WCs
+	f.Intrinsic.String.Split(v.Local.sWC,"!*!",v.Local.sWC)
+	v.Local.sWC.RedimPreserve(0,0)
+	f.Intrinsic.String.Split(v.Local.sWC,"*!*",v.Local.sWC)
+	
+	'Now we need to loop through each WC, create a Dataview for that WC with the proper sorting, then ToString the view and save it in V.Local.sFile.
+	f.Intrinsic.Control.For(v.Local.iCount,v.Local.sWC.LBound,v.Local.sWC.UBound,1)
+	
+		'Create dataview for the current WC with the proper sorting
+		f.Intrinsic.String.Build("SAR = '{0}'",V.Local.sWC(V.Local.iCount),V.Local.sFilter)
+		V.Local.sSort.Set("PRIORITY DESC, SCHEDSTART ASC, SCHEDEND ASC, JS ASC")
+		f.Data.DataView.Create("ATG","View",22,v.Local.sFilter,v.Local.sSort)
+		
+		'Verify data exists in the Dataview then ToString it with the proper data and store the result in V.Local.sFile.
+		f.Intrinsic.Control.If(v.DataView.ATG!View.RowCount--,>,-1)
+		
+			f.Data.DataView.ToString("ATG","View","JSS*!*BTM*!*ETM*!*BTMTIME*!*ETMTIME*!*RST*!*SAR*!*PSC","",V.Ambient.NewLine,V.Local.sRet)
+			
+			f.Intrinsic.Control.If(v.Local.sFile,=,"")
+				v.Local.sFile.Set(v.Local.sRet)
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Build("{0}{1}{2}",v.Local.sFile,v.Ambient.NewLine,v.Local.sRet,v.Local.sFile)
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.EndIf
+		
+		'We can now close the Dataview so that we can use it in the next WC
+		f.Data.DataView.Close("ATG","View")
+		
+	f.Intrinsic.Control.Next(v.Local.iCount)
+	
+	'we are finished with all of the WC's; We can save everything now.
+	'we need to export as a fixed width file saving it to global\files\APSDLccc
+	f.Intrinsic.File.String2File(v.Local.sFileName,v.Local.sFile)
+	
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.Label("SortList_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	
+	F.Intrinsic.Debug.Stop
+
+	'f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+Program.Sub.SortList.End
+
+'Calls GSRPM.exe in order to generate a new APSDL file with the latest scheduling data
+Program.Sub.GenerateAPSDL.Start
+F.Intrinsic.Control.SetErrorHandler("GenerateAPSDL_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sPrgmPath.Declare(String)
+V.Local.sArg.Declare(String)
+
+F.Intrinsic.Task.SetEnvironmentVariable("APS3DB","PSQL")
+
+'Command line params to pass to program being called
+Function.Intrinsic.String.Build("{0} -1",V.Caller.CompanyCode,V.Local.sArg)
+
+'Mapping to user's plugins dir for the GSRPM.exe
+F.Intrinsic.String.Build("{0}\GSRPM.exe",V.Caller.PluginsDir,V.Local.sPrgmPath)
+
+'Calling program with command line params
+F.Intrinsic.Task.ShellExecSync(V.Caller.Handle,"OPEN",V.Local.sPrgmPath, V.Local.sArg,"",0)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("GenerateAPSDL_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+Program.Sub.GenerateAPSDL.End
+
+'Waits for any current APS process to finish then calls APS Mode 83
+Program.Sub.RunAPSMode83.Start
+F.Intrinsic.Control.Try
+	V.Local.bExist.Declare(Boolean)
+	V.Local.sError.Declare(String)
+
+	'Checking to see if 83 is running
+	f.Intrinsic.UI.InvokeWaitDialog("Waiting for APS Mode 83, APS is already running.")
+	f.Intrinsic.Task.IsProgramRunning("GSXAPS.EXE",V.Local.bExist)
+	f.Intrinsic.Control.DoUntil(v.Local.bExist,=,False)
+		f.Intrinsic.UI.Sleep(60)
+		f.Intrinsic.Task.IsProgramRunning("GSXAPS.EXE",V.Local.bExist)
+	f.Intrinsic.Control.Loop
+	
+	'APS 83 Schedule
+	f.Intrinsic.UI.InvokeWaitDialog("Running APS Mode 83")
+	f.Global.General.CallWrapperSync(500010,"")
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+'	f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+F.Intrinsic.Control.EndTry
+Program.Sub.RunAPSMode83.End
+
+'Waits for any current APS process to finish then calls APS Mode 77
+Program.Sub.RunAPSMode77.Start
+F.Intrinsic.Control.Try
+	V.Local.bExist.Declare(Boolean)
+	V.Local.sError.Declare(String)
+
+	'Checking to see if 77 is running
+	f.Intrinsic.UI.InvokeWaitDialog("Waiting for APS Mode 77, APS is already running.")
+	f.Intrinsic.Task.IsProgramRunning("GSXAPS.EXE",V.Local.bExist)
+	f.Intrinsic.Control.DoUntil(v.Local.bExist,=,False)
+		f.Intrinsic.UI.Sleep(60)
+		f.Intrinsic.Task.IsProgramRunning("GSXAPS.EXE",V.Local.bExist)
+	f.Intrinsic.Control.Loop
+	f.Intrinsic.UI.InvokeWaitDialog("Running APS Mode 77")
+		f.Global.General.CallWrapperSync(500060,"")
+	f.Intrinsic.UI.CloseWaitDialog
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Concat("Project: GCG_4305_APS_TLAND_SCHED.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+'	f.Intrinsic.UI.Msgbox(v.Local.sError)
+	f.Intrinsic.Control.CallSub(unload)
+F.Intrinsic.Control.EndTry
+Program.Sub.RunAPSMode77.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$SS1$}$12/19/2016 8:19:50 AM$}$False
+${$3$}$0$}$$}$0$}$-1$}$$}$12:00:00 AM$}$This program will run a custom scheduling method for APS and also perform a custom sorting of jobs on the dispatch list.
+
+Program.Sub.Comments.End
